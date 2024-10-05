@@ -6,27 +6,62 @@
 % pp. EL262–EL267, Apr. 2013, doi: 10.1121/1.4794934.
 %% Read wav file
 clear; close all; clc
-[yy, fs] = audioread('demo.wav');
+datapath = './data/';
+files = dir(fullfile(datapath, '*.wav'));
 ADCVOLT = 2.5;
-y = yy(:, 1) * ADCVOLT;
+sensitivity = -168;
+
+sig = [];
+for ii = 1 : length(files)
+    [yy, fs] = audioread(fullfile(datapath, files(ii).name));
+    sig = [sig; yy(:, 1) * ADCVOLT];
+end
 
 %% Compute spectrogram 
 % set up parameters 
-nfft = 64;              % number of FFT points
-freqRes = 1;            % frequency resolution
-noverlap = nfft/2;      % FFT window overlap
+% nfft = 1024;              % number of FFT points
+% freqRes = 50;            % frequency resolution
+% noverlap = nfft/2;      % FFT window overlap
+% 
+% window = hann(nfft); 
+% fAxis = 0 : freqRes : fs / 2;
+% 
+% [spec, fAxis, tAxis] = spectrogram(sig, window, noverlap, fAxis, fs);
+% spec_dB = mag2db(abs(spec)) - sensitivity;
 
-window = hann(nfft); 
-fAxis = 0 : freqRes : fs / 2;
-sensitivity = -168;
+% figure(100) 
+% pcolor(tAxis, fAxis, spec_dB);
+% shading interp
+% colorbar 
 
-[spec, fAxis, tAxis] = spectrogram(y, window, noverlap, fAxis, fs);
-spec_dB = mag2db(abs(spec)) - sensitivity;
+%% Compute spectrogram (PSD) 
+% set up parameters 
+% time resolation, duration of each segment 
+dt = 1;                             
+N = floor(length(sig) / fs / dt);        % number of segments 
+tAxis = 0 : dt : N * dt - 1; 
 
-figure(100) 
-pcolor(tAxis, fAxis, spec_dB);
+% frequency resolution
+freqRes = 100;                       
+fAxis = freqRes : freqRes : fs / 2;       
+
+Pxx = [];
+win = [];       % using default window: hanning window 
+
+for ii = 1 : N 
+    [pxx, fAxis] = pwelch(sig( ((ii - 1) * dt * fs + 1) : (ii * dt * fs) ), win, 0, fAxis, fs);
+    Pxx = [Pxx pxx.'];
+end
+PxxdB = pow2db(Pxx) - sensitivity; 
+
+% display result 
+figure(100);
+pcolor(tAxis, fAxis/1000, PxxdB); 
+colorbar
+xlabel('time (s)')
+ylabel('frequency (kHz)')
 shading interp
-colorbar 
+
 
 %% Compute spectral probability density 
 percentiles = [5, 50, 95];
@@ -38,7 +73,7 @@ spd.percentiles = percentiles;
 spd.percentilesLines = zeros(length(spd.percentiles), nFreqBin); 
 
 for iFreq = 1 : nFreqBin
-    freqBinData = spec_dB(iFreq, :); 
+    freqBinData = PxxdB(iFreq, :); 
     emppdf = histcounts(freqBinData, splBinEdges, 'Normalization', 'probability'); 
     spd.pdf(:, iFreq) = emppdf(:);
     for iP = 1 : length(spd.percentiles) 
@@ -54,7 +89,7 @@ fH = figure(101);
 fH.Position = [100 100 1000 600];
 tH = tiledlayout(1, 1, "TileSpacing", "tight", "Padding", "tight");
 tH.Units = 'inches'; 
-tH.OuterPosition = [0 0 16 9]/2;
+tH.OuterPosition = [0 0 16 9] * 0.5;
 aH = nexttile;
 pcolor(fAxis/1e3, splBinEdges(2:end), spd.pdf);
 shading interp
@@ -69,10 +104,10 @@ end
 
 xlabel('frequency (kHz)')
 ylabel('SPL (dB re 1 \muPa/Hz)')
-ylim([70 180])
+ylim([20 90])
 grid on
 h = colorbar;
 h.Label.String = 'empirical probability density';
 legend(legends)
 %% Save SPD
-exportgraphics(fH, "SPD.png", 'Resolution', 600)
+% exportgraphics(fH, "SPD.png", 'Resolution', 600)
